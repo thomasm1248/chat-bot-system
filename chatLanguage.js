@@ -26,7 +26,7 @@ t.module('chatLanguage', () => {
   });
   const Section = t.freeze({
     text: 'string',
-    interruptInterval: Optional('number'), // minutes
+    interval: Optional('number'), // minutes
     options: Dictionary(Option),
   });
   const Brain = Dictionary(Section);
@@ -34,7 +34,9 @@ t.module('chatLanguage', () => {
   // Parsing
 
   e.parse = (brain, text, textSourceName) => {
+    // Validation
     if(brain === undefined)
+      // Default brain if none was provided
       brain = {
         'system options': {
           text: 'These options belong to the system,' +
@@ -56,25 +58,184 @@ t.module('chatLanguage', () => {
     t.shape('string', text);
     t.shape('string', textSourceName);
 
-    // Split text into lines
-    const lines = text
+    // Parse text
+    const parsedLines = text
+      // Split text into lines
       .split('\n')
-      .map(l => l.trim())
-      .filter(l => l.length > 0);
+      // Trim lines and record line numbers
+      .map((l, i) => ({
+        text: l.trim(),
+        lineNumber: i + 1,
+      }))
+      // Discard empty lines
+      .filter(l => l.text.length > 0)
+      // Parse each line
+      .map(l => {
+        const firstCharacter = l.text[0];
+        try {
+          switch(firstCharacter) {
+            case '~': // Interrupt interval
+              {
+                const match = l.text.match(/^~(?<amount>\d+)(?<unit>[mhDMY])$/);
+                if(match === null)
+                  throw new Error('Expected a valid interrupt interval line.');
+                const amount = match.groups.amount;
+                const unit = match.groups.unit;
+                // Convert unit to minutes
+                let minutes;
+                switch(unit) {
+                  case 'm':
+                    minutes = amount * 1; // cast as number
+                    break;
+                  case 'h':
+                    minutes = amount * 60;
+                    break;
+                  case 'D':
+                    minutes = amount * 24 * 60;
+                    break;
+                  case 'M':
+                    minutes = amount * 30 * 24 * 60;
+                    break;
+                  case 'Y':
+                    minutes = amount * 365 * 24 * 60;
+                    break;
+                  default:
+                    throw new Error('Unit was not [mhdMy].');
+                }
+                return {
+                  ...l,
+                  type: 'interrupt interval',
+                  minutes,
+                };
+              }
+            case '.': // Option
+              {
+                const match = l.text.match(/^\.(?<label>[^\s:]+):(?<text>.*)$/);
+                if(match === null)
+                  throw new Error('Expected a valid option line.');
+                const label = match.groups.label;
+                const text = match.groups.text.trim();
+                return {
+                  ...l,
+                  type: 'option',
+                  label,
+                  text,
+                };
+              }
+            case '-': // Jump
+              {
+                const match = l.text.match(/^->(?<jump>.+)$/);
+                if(match === null)
+                  throw new Error('Expected a valid jump line.');
+                const jump = match.groups.jump.trim();
+                return {
+                  ...l,
+                  type: 'jump',
+                  jump,
+                };
+              }
+            default:  // Section
+              {
+                const match = l.text.match(/^(?<label>[^\s:]+):(?<text>.*)$/);
+                if(match === null)
+                  throw new Error('Expected a valid section line.');
+                const label = match.groups.label;
+                const text = match.groups.text.trim();
+                return {
+                  ...l,
+                  type: 'section',
+                  label,
+                  text,
+                };
+              }
+          }
+        } catch({ message }) {
+          return {
+            ...l,
+            type: 'error',
+            message,
+          };
+        }
+      });
 
-    let currentSectionLabel = 'system options';
-    let currentOptionLabel = 'entry points';
-    let i = 0;
-    for(let i = 0; i < lines.length; i++) {
-      const result = parseLine(
-        brain,
-        lines[i],
-        `${textSourceName} line ${i + 1}`,
-        currentSectionLabel,
-        currentOptionLabel);
-      currentSectionLabel = result.currentSectionLabel;
-      currentOptionLabel = result.currentOptionLabel;
-    }
+    // Begin collecting errors
+    const errors = parsedLines.filter(l => l.type === 'error');
+
+    // Gather parsed lines into structured brain format
+    let section = brain['system options'];
+    let option = section.options['entry points'];
+    parsedLines
+      .filter(l => l.type !== 'error')
+      .forEach(l => {
+        switch(l.type) {
+          case 'section':
+            if(brain[l.label] === undefined) {
+              const newSection = {
+                text: l.text,
+                options: [],
+              };
+              brain[l.label] = newSection;
+              section = newSection;
+              option = null;
+              break;
+            }
+            errors.push({
+              ...l,
+              message: 'A section with that label is' +
+                       ' already defined.',
+            });
+            break;
+          case 'interrupt interval':
+            if(option === null &&
+               section.interval === undefined) {
+              section.interval = l.minutes;
+              break;
+            }
+            errors.push({
+              ...l,
+              message: 'You can only specify one' +
+                       ' interval for a section.',
+            });
+            break;
+          case 'option':
+            if(section.options[l.label] === undefined) {
+              const newOption = {
+                text: l.text,
+                jumps: [],
+              };
+              section.options[l.label] = newOption;
+              option = newOption;
+              break;
+            }
+            errors.push({
+              ...l,
+              message: 'An option can\'t be defined' +
+                       ' more than once for a section.',
+            });
+            break;
+          case 'jump':
+            if(option !== null) {
+              option.jumps.push(l.jump);
+              break;
+            }
+            errors.push({
+              ...l,
+              message: 'A jump must be defined after' +
+                       ' an option.',
+            });
+            break;
+          default:
+            t.warn('Parser created invalid data:', l);
+            break;
+        }
+      });
+
+    // Print errors to console
+    errors.forEach(e => {
+      t.warn(`Error: ${sourceName}, line ${e.lineNumber}:\n` +
+             `  ${e.text}\n` +
+             `    "${e.message}"`);
+    });
 
     return brain;
   };
@@ -83,231 +244,6 @@ If brain is undefined, then a new empty brain\
  will be created. Either way, the text will be\
  parsed, and the brain will be updated to contain\
  the declarations in the text.`;
-
-  const parseLine = (brain, line, source, currentSectionLabel, currentOptionLabel) => {
-    t.shape(Brain, brain);
-    t.shape('string', line);
-    t.shape('string', source);
-    t.shape(Optional('string'), currentSectionLabel);
-    t.shape(Optional('string'), currentOptionLabel);
-    
-    // Try parsing the line
-    const result =
-      parseSectionDeclaration(line) ??
-      parseSectionIntervalDeclaration(line, currentSectionLabel) ??
-      parseOptionDeclaration(line, currentSectionLabel) ??
-      parseOptionJumpDeclaration(line, currentSectionLabel, currentOptionLabel);
-    if(result === null)
-      return `${source}: Invalid line.`;
-
-    // Add information to brain
-    t.shape({ type: 'string' }, result);
-    switch(result.type) {
-      case 'section':
-        t.shape({ label: 'string', text: 'string' }, result);
-        if(brain[result.label] === undefined)
-          brain[result.label] = {
-            options: {},
-          };
-        brain[result.label].text = result.text;
-        currentSectionLabel = result.label;
-        currentOptionLabel = undefined;
-        break;
-      case 'section interval':
-        if(result.label === undefined)
-          return `${source}: Failed to imply section label.`;
-        t.shape({ label: 'string', minutes: Optional(Int) }, result);
-        if(brain[result.label] === undefined)
-          return `${source}: The section '${result.label}' hasn't been defined yet.`;
-        brain[result.label].interruptInterval = result.minutes;
-        currentSectionLabel = result.label;
-        currentOptionLabel = undefined;
-        break;
-      case 'option':
-        if(result.section === undefined)
-          return `${source}: Failed to imply section label.`;
-        t.shape({ section: 'string', option: 'string', text: 'string' }, result);
-        if(brain[result.section] === undefined)
-          return `${source}: The section '${result.label}' hasn't been defined yet.`;
-        if(brain[result.section].options[result.option] === undefined)
-          brain[result.section].options[result.option] = {
-            jumps: [],
-          };
-        brain[result.section].options[result.option].text = result.text;
-        currentSectionLabel = result.section;
-        currentOptionLabel = result.option;
-        break;
-      case 'option jump':
-        if(result.section === undefined)
-          return `${source}: Failed to imply section label.`;
-        if(result.option === undefined)
-          return `${source}: Failed to imply option label.`;
-        t.shape({ section: 'string', option: 'string', jump: 'string' }, result);
-        if(brain[result.section] === undefined)
-          return `${source}: The section '${result.label}' hasn't been defined yet.`;
-        if(brain[result.section].options[result.option] === undefined)
-          return `${source}: The option '${result.section}.${result.label}' hasn't been defined yet.`;
-        brain[result.section].options[result.option].jumps.push(result.jump);
-        currentSectionLabel = result.section;
-        currentOptionLabel = result.option;
-        break;
-      default:
-        throw new Error(`${source}: Parsing functions\
- returned an unknown shape.`);
-    }
-
-    return t.freeze({
-      currentSectionLabel,
-      currentOptionLabel,
-    });
-  };
-
-  const parseSectionDeclaration = line => {
-    t.shape('string', line);
-
-    const match = line.match(/^(?<label>[\w-]+):(?<text>.*)$/);
-    if(match === null)
-      return null;
-
-    return t.freeze({
-      type: 'section',
-      label: match.groups.label,
-      text: match.groups.text.trim(),
-    });
-  };
-
-  const parseSectionIntervalDeclaration = (line, currentSectionLabel) => {
-    t.shape('string', line);
-    t.shape(Optional('string'), currentSectionLabel);
-
-    // What needs to be collected
-    let amount;
-    let unit;
-
-    // Allow label to be implied
-    const firstCharacter = line[0];
-    if(firstCharacter === '~') {
-      // Label is implied
-      const match = line.match(/^~((?<never>never)|(?<amount>\d+)(?<unit>[mhdMy]))$/);
-      if(match === null)
-        return null;
-      if(match.groups.never === undefined) {
-        amount = match.groups.amount;
-        unit = match.groups.unit;
-      }
-    } else {
-      // Label is specified
-      const match = line.match(/^(?<label>[\w-]+)~((?<never>never)|(?<amount>\d+)(?<unit>[mhdMy]))$/);
-      if(match === null)
-        return null;
-      currentSectionLabel = match.groups.label;
-      if(match.groups.never === undefined) {
-        amount = match.groups.amount;
-        unit = match.groups.unit;
-      }
-    }
-
-    // Convert unit to minutes
-    let minutes;
-    if(amount !== undefined) {
-      switch(unit) {
-        case 'm':
-          minutes = amount * 1;
-          break;
-        case 'h':
-          minutes = amount * 60;
-          break;
-        case 'd':
-          minutes = amount * 24 * 60;
-          break;
-        case 'M':
-          minutes = amount * 30 * 24 * 60;
-          break;
-        case 'y':
-          minutes = amount * 365 * 24 * 60;
-          break;
-        default:
-          throw new Error('Unit was not [mhdMy]');
-      }
-    }
-
-    return t.freeze({
-      type: 'section interval',
-      label: currentSectionLabel,
-      minutes,
-    });
-  };
-
-  const parseOptionDeclaration = (line, currentSectionLabel) => {
-    t.shape('string', line);
-    t.shape(Optional('string'), currentSectionLabel);
-
-    // What needs to be collected
-    let text;
-    let optionLabel;
-
-    // Allow section label to be implied
-    const firstCharacter = line[0];
-    if(firstCharacter === '.') {
-      // Section label is implied
-      const match = line.match(/^\.(?<option>[\w-]+):(?<text>.*)$/);
-      if(match === null) return null;
-      text = match.groups.text.trim();
-      optionLabel = match.groups.option;
-    } else {
-      // Section label is specified
-      const match = line.match(/^(?<section>[\w-]+)\.(?<option>[\w-]+):(?<text>.*)$/);
-      if(match === null) return null;
-      text = match.groups.text.trim();
-      optionLabel = match.groups.option;
-      currentSectionLabel = match.groups.section;
-    }
-
-    return t.freeze({
-      type: 'option',
-      section: currentSectionLabel,
-      option: optionLabel,
-      text,
-    });
-  };
-
-  const parseOptionJumpDeclaration = (line, currentSectionLabel, currentOptionLabel) => {
-    t.shape('string', line);
-    t.shape(Optional('string'), currentSectionLabel);
-    t.shape(Optional('string'), currentOptionLabel);
-
-    // What needs to be collected
-    let jumpValue;
-
-    // Allow section/option labels to be implied
-    const firstCharacter = line[0];
-    if(firstCharacter === '.') {
-      // Only section is implied
-      const match = line.match(/^\.(?<option>[\w-]+)->(?<jump>.*)$/);
-      if(match === null) return null;
-      jumpValue = match.groups.jump.trim();
-      currentOptionLabel = match.groups.option;
-    } else if(firstCharacter === '-') {
-      // Both are implied
-      const match = line.match(/^->(?<jump>.*)$/);
-      if(match === null) return null;
-      jumpValue = match.groups.jump.trim();
-    } else {
-      // Neither are implied
-      const match = line.match(/^(?<section>[\w-]+)\.(?<option>[\w-]+)->(?<jump>.*)$/);
-      if(match === null) return null;
-      jumpValue = match.groups.jump.trim();
-      currentOptionLabel = match.groups.option;
-      currentSectionLabel = match.groups.section;
-    }
-
-    return t.freeze({
-      type: 'option jump',
-      section: currentSectionLabel,
-      option: currentOptionLabel,
-      jump: jumpValue,
-    });
-  };
 
   return e;
 });

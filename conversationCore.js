@@ -27,18 +27,25 @@ t.module('conversationCore', () => {
 Chooses a section to start with and returns it.`;
 
   e.jump = (brain, currentSection, option) => {
+    // Get list of jumps
     const jumpLabels =
-      brain[currentSection].options[option].jumps;
-
-    if(jumpLabels.length === 0) {
+      brain[currentSection]?.options[option].jumps;
+    t.assert(
+      jumpLabels !== undefined,
+      `invalid section provided: ${currentSection}`);
+    if(jumpLabels === undefined ||
+       jumpLabels.length === 0) {
       return {
         type: 'done',
       };
     }
 
+    // Choose random jump
     const randomIndex = Math.floor(
       Math.random() * jumpLabels.length);
     const chosenJump = jumpLabels[randomIndex];
+
+    // What kind of jump?
     if(brain[chosenJump] === undefined) {
       if(!chosenJump.startsWith('http')) {
         t.warn('jump not defined', chosenJump);
@@ -61,24 +68,34 @@ Chooses a section to start with and returns it.`;
  => { type: 'error|url|section|done', message|url|label: 'string' }
 Jumps to a random section pointed to by the chosen option.`;
 
-  e.checkForInterrupts = (interrupts, passedMS) => {
-    t.shape([{ label: 'string', interval: 'number'}], interrupts);
+  e.checkForInterrupts = (brain, passedMS) => {
+    t.shape('object', brain);
+    t.shape('number', passedMS);
 
-    const interruptsThatHappened = interrupts
-      .map(interrupt =>{
-        const interruptIntervalMS = interrupt.interval * 6000;
-        const probability = passedMS / interruptIntervalMS;
-        const happened = Math.random() < probability;
-        if(happened) t.log('interrupt:', interrupt.label);
-        return happened ? interrupt : null;
-      })
-      .filter(l => l !== null)
-      .sort((a, b) => a.interval < b.interval);
+    // Randomly choose sections based on interval
+    const interruptsThatHappened = [];
+    for(const label in brain) {
+      const section = brain[label];
+      if(section.interval === undefined)
+        continue;
+      const interruptIntervalMS = section.interval * 6000;
+      const probability = passedMS / interruptIntervalMS;
+      const happened = Math.random() < probability;
+      if(happened) {
+        t.log('interrupt:', label);
+        interruptsThatHappened.push(section);
+      }
+    }
 
-    if(interruptsThatHappened.length === 0)
+    // If more than one was triggered, choose
+    // the one with the largest interval
+    // (since it happens less often)
+    const prioritizedInterrupts = interruptsThatHappened
+      .sort((a, b) => a.interval > b.interval);
+    if(prioritizedInterrupts.length === 0)
       return null;
-
-    return interruptsThatHappened[0].label;
+    else
+      return interruptsThatHappened[0].label;
   }
   e.checkForInterrupts.meta = `(interrupts, passedMS) => label | null
 Checks if one of the interrupts happened during the passed ms.`;
