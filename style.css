@@ -1,0 +1,18 @@
+body {
+}
+
+#grandpa-says {
+  border: 1px solid black;
+}
+
+#I-say li {
+  cursor: pointer;
+}
+
+#I-say li:hover {
+  background-color: aliceblue;
+}
+
+#I-say li:active {
+  background-color: lightblue;
+}
