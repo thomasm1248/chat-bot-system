@@ -1,9 +1,4 @@
-'use strict';
-
-t.module('brainCode', () => {
-  const e = {};
-
-  e.code = `
+t.module('brainCode', () => { code: `
 ->gentle-greeting
 
 gentle-greeting: Well hey there, kiddo — what’s on your heart today?
@@ -225,7 +220,4 @@ affection: Love you more than all the stars I've counted.
 ->qiet-presence
 .story: Tell story
 ->story-hook
-  `;
-
-  return e;
-});
+`});
