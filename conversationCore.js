@@ -4,6 +4,8 @@ t.module('conversationCore', () => {
   const e = {};
 
   e.startConversation = brain => {
+    // brain => sectionLabel
+    // Chooses a section to start with and returns it.
     t.shape({
       'system options': {
         options: {
@@ -23,10 +25,12 @@ t.module('conversationCore', () => {
       Math.random() * entryPointLabels.length);
     return entryPointLabels[randomIndex];
   };
-  e.startConversation.meta = `brain => sectionLabel
-Chooses a section to start with and returns it.`;
 
   e.jump = (brain, currentSection, option) => {
+    // (brain, currentSectionLabel, optionLabel)
+    //  => { type: 'error|url|section|done', message|url|label: 'string' }
+    // Jumps to a random section pointed to by the chosen option.
+    
     // Get list of jumps
     const jumpLabels =
       brain[currentSection]?.options[option].jumps;
@@ -47,16 +51,21 @@ Chooses a section to start with and returns it.`;
 
     // What kind of jump?
     if(brain[chosenJump] === undefined) {
-      if(!chosenJump.startsWith('http')) {
-        t.warn('jump not defined', chosenJump);
+      if(chosenJump.startsWith('http')) {
         return {
-          type: 'error',
-          message: `Section '${chosenJump}' not defined`,
+          type: 'url new tab',
+          url: chosenJump,
+        };
+      } else if(chosenJump.startsWith('javascript:')) {
+        return {
+          type: 'url',
+          url: chosenJump,
         };
       }
+      t.warn('jump not defined', chosenJump);
       return {
-        type: 'url',
-        url: chosenJump,
+        type: 'error',
+        message: `Section '${chosenJump}' not defined`,
       };
     }
     return {
@@ -64,11 +73,10 @@ Chooses a section to start with and returns it.`;
       label: chosenJump,
     };
   };
-  e.jump.meta = `(brain, currentSectionLabel, optionLabel)\
- => { type: 'error|url|section|done', message|url|label: 'string' }
-Jumps to a random section pointed to by the chosen option.`;
 
   e.checkForInterrupts = (brain, passedMS) => {
+    // (interrupts, passedMS) => label | null
+    // Checks if one of the interrupts happened during the passed ms.
     t.shape('object', brain);
     t.shape('number', passedMS);
 
@@ -78,12 +86,15 @@ Jumps to a random section pointed to by the chosen option.`;
       const section = brain[label];
       if(section.interval === undefined)
         continue;
-      const interruptIntervalMS = section.interval * 6000;
+      const interruptIntervalMS = section.interval * 60000;
       const probability = passedMS / interruptIntervalMS;
       const happened = Math.random() < probability;
       if(happened) {
         t.log('interrupt:', label);
-        interruptsThatHappened.push(section);
+        interruptsThatHappened.push({
+          label,
+          interval: section.interval,
+        });
       }
     }
 
@@ -97,8 +108,6 @@ Jumps to a random section pointed to by the chosen option.`;
     else
       return interruptsThatHappened[0].label;
   }
-  e.checkForInterrupts.meta = `(interrupts, passedMS) => label | null
-Checks if one of the interrupts happened during the passed ms.`;
 
   return e;
 });

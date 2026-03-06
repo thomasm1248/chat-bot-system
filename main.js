@@ -4,6 +4,7 @@
   const parser = t.require('chatLanguage');
   const brainCode = t.require('brainCode').code;
   const convoManager = t.require('conversationCore');
+  const utils = t.require('utils');
 
   // Parse brain
   const brain = parser.parse(undefined, brainCode, 'brainCode');
@@ -53,7 +54,12 @@
         renderUi();
         break;
       case 'url':
-        openInNewTab(result.url);
+        openUrl(result.url);
+        currentSectionLabel = null;
+        renderUi();
+        break;
+      case 'url new tab':
+        openUrlInNewTab(result.url);
         currentSectionLabel = null;
         renderUi();
         break;
@@ -108,23 +114,34 @@
       optionList.innerHTML = '';
     } else {
       // We're in a conversation
+      t.log('about to render:', currentSectionLabel);
       const section = brain[currentSectionLabel];
 
       // Display section text
-      sectionText.innerHTML = section.text;
+      sectionText.innerHTML =
+        utils.encodeTextForHtml(section.text);
+      t.log(sectionText.innerHTML);
 
       // Display options
       optionList.innerHTML = '';
       const options = section.options;
       for(const label in options) {
         const option = options[label];
+        const htmlText =
+          utils.encodeTextForHtml(option.text);
         optionList.innerHTML +=
-          `<li data-option-label="${label}">${option.text}</li>`;
+          `<li data-option-label="${label}">${htmlText}</li>`;
       }
     }
   };
 
-  const openInNewTab = url => {
+  const openUrl = url => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.click();
+  };
+
+  const openUrlInNewTab = url => {
     const link = document.createElement('a');
     link.href = url;
     link.target = '_blank';

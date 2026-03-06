@@ -34,6 +34,12 @@ t.module('chatLanguage', () => {
   // Parsing
 
   e.parse = (brain, text, textSourceName) => {
+    // (brain, text, sourceName) => brain
+    // If brain is undefined, then a new empty brain
+    // will be created. Either way, the text will be
+    // parsed, and the brain will be updated to contain
+    // the declarations in the text.
+
     // Validation
     if(brain === undefined)
       // Default brain if none was provided
@@ -232,18 +238,13 @@ t.module('chatLanguage', () => {
 
     // Print errors to console
     errors.forEach(e => {
-      t.warn(`Error: ${sourceName}, line ${e.lineNumber}:\n` +
+      console.warn(`Error: ${textSourceName}, line ${e.lineNumber}:\n` +
              `  ${e.text}\n` +
              `    "${e.message}"`);
     });
 
     return brain;
   };
-  e.parse.meta = `(brain, text, sourceName) => brain
-If brain is undefined, then a new empty brain\
- will be created. Either way, the text will be\
- parsed, and the brain will be updated to contain\
- the declarations in the text.`;
 
   return e;
 });
