@@ -40,7 +40,8 @@ t.module('conversationCore', () => {
     if(jumpLabels === undefined ||
        jumpLabels.length === 0) {
       return {
-        type: 'done',
+        type: 'section',
+        label: null,
       };
     }
 
@@ -50,28 +51,21 @@ t.module('conversationCore', () => {
     const chosenJump = jumpLabels[randomIndex];
 
     // What kind of jump?
-    if(brain[chosenJump] === undefined) {
-      if(chosenJump.startsWith('http')) {
-        return {
-          type: 'url new tab',
-          url: chosenJump,
-        };
-      } else if(chosenJump.startsWith('javascript:')) {
-        return {
-          type: 'url',
-          url: chosenJump,
-        };
-      }
-      t.warn('jump not defined', chosenJump);
+    const match = chosenJump.match(/^[a-z]+:.*$/);
+    if(match !== null) {
+      // URL
       return {
-        type: 'error',
-        message: `Section '${chosenJump}' not defined`,
+        type: 'url',
+        url: chosenJump,
+        newTab: chosenJump.startsWith('http'),
+      };
+    } else {
+      // Section
+      return {
+        type: 'section',
+        label: chosenJump,
       };
     }
-    return {
-      type: 'section',
-      label: chosenJump,
-    };
   };
 
   e.checkForInterrupts = (brain, passedMS) => {

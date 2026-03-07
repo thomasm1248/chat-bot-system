@@ -4,25 +4,26 @@
   const parser = t.require('chatLanguage');
   const brainCode = t.require('brainCode').code;
   const convoManager = t.require('conversationCore');
-  const utils = t.require('utils');
+  const chatBotUi = t.require('chatBotUi');
 
   // Parse brain
-  const brain = parser.parse(undefined, brainCode, 'brainCode');
+  const brain = parser.parse(null, brainCode, 'brainCode');
 
   // Connect to UI
-  const sectionText = document.getElementById('grandpa-says');
-  const optionList = document.getElementById('I-say');
+  const sectionTextElement = document.getElementById('demon-says');
+  const optionListElement = document.getElementById('option-list');
 
   // State
   let currentSectionLabel = null;
 
   // Connect event listeners
-  sectionText.onclick = e => {
+  sectionTextElement.onclick = e => {
     if(currentSectionLabel !== null) return;
     startConversation();
   };
-  optionList.onclick = e => {
+  optionListElement.onclick = e => {
     const optionLabel = e.srcElement.dataset.optionLabel;
+    if(optionLabel === undefined) return;
     selectOption(optionLabel);
   };
   setInterval(() => {
@@ -49,28 +50,11 @@
     
     switch(result.type) {
       case 'section':
-        currentSectionLabel = result.label;
-        t.shape('string', currentSectionLabel);
-        renderUi();
+        jumpToSection(result.label);
         break;
       case 'url':
-        openUrl(result.url);
-        currentSectionLabel = null;
-        renderUi();
-        break;
-      case 'url new tab':
-        openUrlInNewTab(result.url);
-        currentSectionLabel = null;
-        renderUi();
-        break;
-      case 'done':
-        currentSectionLabel = null;
-        renderUi();
-        break;
-      case 'error':
-        console.warn(result.message);
-        currentSectionLabel = null;
-        renderUi();
+        openUrl(result.url, result.newTab);
+        jumpToSection(null);
         break;
       default:
         t.warn(
@@ -78,6 +62,26 @@
           result);
         break;
     }
+  };
+
+  // Jump to next conversation section
+  const jumpToSection = label => {
+    if(label === null) {
+      // End the conversation
+      currentSectionLabel = null;
+      renderUi();
+      return;
+    }
+    if(brain[label] === undefined) {
+      // Section not defined
+      console.log(`section '${label}' was not defined`);
+      currentSectionLabel = null;
+      renderUi();
+      return;
+    }
+    // Jump to section
+    currentSectionLabel = label;
+    renderUi();
   };
 
   // Check for interrupts
@@ -108,43 +112,17 @@
   // UI operations
 
   const renderUi = () => {
-    if(currentSectionLabel === null) {
-      // No conversation currently
-      sectionText.innerHTML = 'Click to start conversation';
-      optionList.innerHTML = '';
-    } else {
-      // We're in a conversation
-      t.log('about to render:', currentSectionLabel);
-      const section = brain[currentSectionLabel];
-
-      // Display section text
-      sectionText.innerHTML =
-        utils.encodeTextForHtml(section.text);
-      t.log(sectionText.innerHTML);
-
-      // Display options
-      optionList.innerHTML = '';
-      const options = section.options;
-      for(const label in options) {
-        const option = options[label];
-        const htmlText =
-          utils.encodeTextForHtml(option.text);
-        optionList.innerHTML +=
-          `<li data-option-label="${label}">${htmlText}</li>`;
-      }
-    }
+    chatBotUi.displaySectionOfBrain(
+      brain,
+      currentSectionLabel,
+      sectionTextElement,
+      optionListElement);
   };
 
-  const openUrl = url => {
+  const openUrl = (url, newTab) => {
     const link = document.createElement('a');
     link.href = url;
-    link.click();
-  };
-
-  const openUrlInNewTab = url => {
-    const link = document.createElement('a');
-    link.href = url;
-    link.target = '_blank';
+    if(newTab) link.target = '_blank';
     link.click();
   };
 

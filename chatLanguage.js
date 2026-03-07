@@ -35,13 +35,13 @@ t.module('chatLanguage', () => {
 
   e.parse = (brain, text, textSourceName) => {
     // (brain, text, sourceName) => brain
-    // If brain is undefined, then a new empty brain
+    // If brain is null, then a new empty brain
     // will be created. Either way, the text will be
     // parsed, and the brain will be updated to contain
     // the declarations in the text.
 
     // Validation
-    if(brain === undefined)
+    if(brain === null)
       // Default brain if none was provided
       brain = {
         'system options': {
